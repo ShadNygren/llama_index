@@ -10,9 +10,12 @@ class YahooFinanceToolSpec(BaseToolSpec):
         "balance_sheet",
         "income_statement",
         "cash_flow",
+        "quarterly_financials",
         "stock_basic_info",
         "stock_analyst_recommendations",
         "stock_news",
+        "stock_prices",
+        "stock_earnings"
     ]
 
     def __init__(self) -> None:
@@ -54,6 +57,16 @@ class YahooFinanceToolSpec(BaseToolSpec):
         cash_flow = pd.DataFrame(stock.cashflow)
         return "Cash Flow: \n" + cash_flow.to_string()
 
+    def quarterly_financials(self, ticker: str) -> pd.DataFrame:
+        """
+        Return the quarterly financials of the stock.
+        Args:
+        ticker (str): the stock ticker to be given to yfinance
+        """
+        stock = yf.Ticker(ticker)
+        quarterly_financials = stock.quarterly_financials
+        return quarterly_financials
+
     def stock_basic_info(self, ticker: str) -> str:
         """
         Return the basic info of the stock. Ex: price, description, name.
@@ -90,3 +103,24 @@ class YahooFinanceToolSpec(BaseToolSpec):
         for i in news:
             out += i["title"] + "\n"
         return out
+
+    def stock_prices(self, ticker: str) -> pd.DataFrame:
+        """
+        Get the historical prices and volume for a stock.
+        Args:
+        ticker (str): the stock ticker to be given to yfinance
+        """
+        stock = yf.Ticker(ticker)
+        df = stock.history()
+        return df
+
+    def stock_earnings(self, ticker: str) -> pd.DataFrame:
+        """
+        Get the earnings estimated vs reported and percentage surpise per date␣
+        ↪(past and future dates).
+        Args:
+        ticker (str): the stock ticker to be given to yfinance
+        """
+        stock = yf.Ticker(ticker)
+        earnings = stock.earnings_dates
+        return earnings
