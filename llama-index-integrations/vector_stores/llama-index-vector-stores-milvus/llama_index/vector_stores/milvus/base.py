@@ -8,8 +8,9 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 import pymilvus  # noqa
-from llama_index.core.bridge.pydantic import PrivateAttr
+from llama_index.core.bridge.pydantic import Field, PrivateAttr
 from llama_index.core.schema import BaseNode, TextNode
+from llama_index.core.utils import iter_batch
 from llama_index.core.vector_stores.types import (
     BasePydanticVectorStore,
     MetadataFilters,
@@ -27,6 +28,7 @@ from pymilvus import Collection, MilvusClient
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_BATCH_SIZE = 100
 MILVUS_ID_FIELD = "id"
 
 
@@ -115,8 +117,10 @@ class MilvusVectorStore(BasePydanticVectorStore):
     consistency_level: str = "Strong"
     overwrite: bool = False
     text_key: Optional[str]
+    output_fields: List[str] = Field(default_factory=list)
     index_config: Optional[dict]
     search_config: Optional[dict]
+    batch_size: int = DEFAULT_BATCH_SIZE
 
     _milvusclient: MilvusClient = PrivateAttr()
     _collection: Any = PrivateAttr()
@@ -133,8 +137,10 @@ class MilvusVectorStore(BasePydanticVectorStore):
         consistency_level: str = "Strong",
         overwrite: bool = False,
         text_key: Optional[str] = None,
+        output_fields: Optional[List[str]] = None,
         index_config: Optional[dict] = None,
         search_config: Optional[dict] = None,
+        batch_size: int = DEFAULT_BATCH_SIZE,
         **kwargs: Any,
     ) -> None:
         """Init params."""
@@ -146,8 +152,10 @@ class MilvusVectorStore(BasePydanticVectorStore):
             consistency_level=consistency_level,
             overwrite=overwrite,
             text_key=text_key,
+            output_fields=output_fields or [],
             index_config=index_config if index_config else {},
             search_config=search_config if search_config else {},
+            batch_size=batch_size,
         )
 
         # Select the similarity metric
@@ -222,7 +230,8 @@ class MilvusVectorStore(BasePydanticVectorStore):
             insert_list.append(entry)
 
         # Insert the data into milvus
-        self._collection.insert(insert_list)
+        for insert_batch in iter_batch(insert_list, self.batch_size):
+            self._collection.insert(insert_batch)
         if add_kwargs.get("force_flush", False):
             self._collection.flush()
         self._create_index_if_required()
@@ -294,6 +303,8 @@ class MilvusVectorStore(BasePydanticVectorStore):
         # Limit output fields
         if query.output_fields is not None:
             output_fields = query.output_fields
+        elif len(self.output_fields) > 0:
+            output_fields = self.output_fields
 
         # Convert to string expression
         string_expr = ""
@@ -336,9 +347,10 @@ class MilvusVectorStore(BasePydanticVectorStore):
                         "The passed in text_key value does not exist "
                         "in the retrieved entity."
                     )
-                node = TextNode(
-                    text=text,
-                )
+
+                metadata = {key: hit["entity"].get(key) for key in self.output_fields}
+                node = TextNode(text=text, metadata=metadata)
+
             nodes.append(node)
             similarities.append(hit["distance"])
             ids.append(hit["id"])
